@@ -86,37 +86,46 @@ def create_app():
 
         return render_template('login.html')
 
+    import urllib.parse
+
     @app.route('/verify-otp', methods=['GET', 'POST'])
     def verify_otp():
         if request.method == 'POST':
             entered = request.form.get('otp', '').strip()
-            token = request.cookies.get('otp_token')
-            if not token:
-                flash('OTP session expired. Please login again.', 'danger')
-                return redirect(url_for('login'))
-            try:
-                data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
-            except jwt.ExpiredSignatureError:
-                flash('OTP expired. Please login again.', 'danger')
-                return redirect(url_for('login'))
-            except Exception:
-                flash('OTP validation failed. Please login again.', 'danger')
-                return redirect(url_for('login'))
+        token = request.cookies.get('otp_token')
 
-            if entered == data.get('otp'):
-                # issue auth token (2-hour expiry)
-                auth_payload = {
-                    'email': data.get('email'),
-                    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)
-                }
-                auth_token = jwt.encode(auth_payload, app.config['JWT_SECRET'], algorithm='HS256')
-                resp = make_response(redirect(url_for('dashboard')))
-                resp.set_cookie('auth_token', auth_token, httponly=True, samesite='Lax')
-                # clear otp_token
-                resp.set_cookie('otp_token', '', expires=0)
-                return resp
-            else:
-                flash('Invalid OTP', 'danger')
+        if not token:
+            flash('OTP session expired. Please login again.', 'danger')
+            return redirect(url_for('login'))
+
+        # 🔥 FIX — Decode URL-encoded string
+        token = urllib.parse.unquote(token)
+
+        try:
+            data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            flash('OTP expired. Please login again.', 'danger')
+            return redirect(url_for('login'))
+        except Exception as e:
+            print("JWT decode error:", e)
+            flash('OTP validation failed. Please login again.', 'danger')
+            return redirect(url_for('login'))
+
+        if entered == data.get('otp'):
+            # issue auth token (2-hour expiry)
+            auth_payload = {
+                'email': data.get('email'),
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+            }
+            auth_token = jwt.encode(auth_payload, app.config['JWT_SECRET'], algorithm='HS256')
+            resp = make_response(redirect(url_for('dashboard')))
+            resp.set_cookie('auth_token', auth_token, httponly=True, samesite='Lax')
+
+            # clear otp_token
+            resp.set_cookie('otp_token', '', expires=0)
+            return resp
+        else:
+            flash('Invalid OTP', 'danger')
 
         return render_template('verify_otp.html')
 
