@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Verify OTP{% endblock %}
+
+{% block content %}
+<section class="auth-wrap">
+
+  <!-- ===== OTP Verification Card ===== -->
+  <div class="card otp-card">
+    <h2 class="headline">Verify OTP</h2>
+    <p class="sub">Enter the 6-digit code sent to your registered email.</p>
+
+    <form method="POST" id="otp-form">
+      <label class="field">
+        <input name="otp" maxlength="6" placeholder="Enter OTP" required />
+      </label>
+
+      <button class="btn primary" type="submit">Verify</button>
+    </form>
+  </div>
+
+</section>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<section class="auth-wrap">
+
+  <!-- ===== PRELOADER ===== -->
+  <div id="preloader">
+<img src="{{ url_for('static', filename='images/preloader (2).gif') }}" class="preloader-gif" alt="Loading...">
+    <div class="preloader-text">Unified Academic Platform</div>
+  </div>
+
+  <!-- ===== LOGIN CARD ===== -->
+  <div class="card login-card">
+    <h2 class="headline">Welcome back</h2>
+    <p class="sub">Sign in with your Employee ID</p>
+
+    <form method="POST" id="login-form">
+      <label class="field">
+        <input name="employee_id" placeholder="Employee ID" required />
+      </label>
+      <label class="field">
+        <input name="password" type="password" placeholder="Password" required />
+      </label>
+
+      <button type="submit" class="btn primary">Send OTP</button>
+
+      <div class="row between">
+        <a href="/forgot" class="muted">Forgot password?</a>
+        <!-- reCAPTCHA placeholder -->
+      </div>
+    </form>
+  </div>
+
+</section>
+{% endblock %}

@@ -1,0 +1,432 @@
+/* ===========================
+   styles.css — Full rewrite
+   - Responsive
+   - Light/Dark (body.light / body.dark)
+   - Preloader integrated as requested:
+     * full-screen centered overlay
+     * .preloader-gif width: 120px
+     * spin animation
+     * hidden by adding `body.loaded`
+   - Small-screen removes card visuals
+   =========================== */
+
+/* ---------- Theme variables (defaults = light) ---------- */
+:root {
+  --bg-1: #fff7f8;
+  --bg-2: #fff2f3;
+  --page-bg: linear-gradient(135deg, var(--bg-1), var(--bg-2));
+  --text: #222222;
+  --muted: #666666;
+  --card-bg: rgba(255,255,255,0.95);
+  --card-shadow: 0 6px 30px rgba(0,0,0,0.08);
+  --accent: #b00020;
+  --accent-2: #d00028;
+  --glass: rgba(255,255,255,0.7);
+  --topbar-bg: rgba(255,255,255,0.9);
+  --preloader-overlay: rgba(255,255,255,0.95);
+  --preloader-backdrop: rgba(255,255,255,0.92);
+  --focus-glow: rgba(183,28,28,0.28);
+  --preload-text-color: #b71c1c;
+  --preloader-gif-width: 120px; /* user requested small GIF size */
+}
+
+/* ---------- Dark theme (applied by adding `body.dark`) ---------- */
+body.dark {
+  --bg-1: #080808;
+  --bg-2: #1a1a1b;
+  --page-bg: linear-gradient(135deg, #080808, #1a1a1b);
+  --text: #eeeef2;
+  --muted: #aaaaaa;
+  --card-bg: rgba(15,17,18,0.88);
+  --card-shadow: 0 8px 30px rgba(2,6,12,0.6);
+  --accent: #ff5252;
+  --accent-2: #ff6b6b;
+  --glass: rgba(10,12,14,0.6);
+  --topbar-bg: rgba(30,30,30,0.9);
+  --preloader-overlay: rgba(2,6,12,0.96);
+  --preloader-backdrop: rgba(2,6,12,0.86);
+  --focus-glow: rgba(255,82,82,0.18);
+  --preload-text-color: #ff6b6b;
+}
+
+/* ---------- Reset & base ---------- */
+* { box-sizing: border-box; }
+html,body { height: 100%; margin: 0; padding: 0; }
+body {
+  font-family: 'Poppins', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: var(--page-bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.45s ease, color 0.35s ease;
+  line-height: 1.35;
+  -webkit-font-feature-settings: "kern";
+}
+
+/* Utility */
+.center { display:flex; align-items:center; justify-content:center; }
+.container { max-width: 1024px; margin: 0 auto; padding: 0 20px; }
+
+/* ---------- Topbar ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  width: 100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 12px 20px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  transition: background .3s ease, box-shadow .3s ease;
+}
+.brand { font-weight: 700; font-size: 1.25rem; color: var(--accent); letter-spacing: .2px; }
+.right button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform .2s ease, background .2s ease;
+}
+.right button:hover { transform: translateY(-2px); background: var(--accent-2); }
+
+/* ---------- Flashes ---------- */
+.flashes { position: fixed; top: 80px; right: 20px; z-index: 1200; }
+.flash {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+.flash.success { background: #1e7d25; }
+.flash.danger, .flash.error { background: var(--accent); }
+
+/* ---------- Main / Auth layout ---------- */
+.auth-wrap {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 20px;
+  min-height: calc(100vh - 120px);
+  z-index: 10;
+}
+
+/* Desktop card layout (kept for >= 760px) */
+.card {
+  background: var(--card-bg);
+  padding: 22px;
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  width: 380px;
+  max-width: 94%;
+  transition: background .35s ease, box-shadow .35s ease, transform .25s ease;
+}
+
+/* Headings, text */
+.headline { font-size: 22px; margin: 6px 0; color: var(--accent); font-weight:700; }
+.sub { color: var(--muted); margin-bottom: 12px; font-size: .95rem; }
+
+/* Form fields */
+.field { margin: 8px 0; }
+.field input,
+input[type="text"], input[type="password"], input[type="email"] {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  margin: 8px 0;
+  font-size: 15px;
+  background: transparent;
+  color: var(--text);
+  transition: box-shadow .2s ease, border-color .2s ease;
+}
+.field input::placeholder { color: rgba(0,0,0,0.35); }
+body.dark .field input::placeholder { color: rgba(255,255,255,0.18); }
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 6px 18px var(--focus-glow);
+}
+
+/* Buttons */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+  padding: 12px 16px; border-radius: 10px; border: none; cursor: pointer; font-weight:700;
+}
+.btn.primary {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #fff;
+  width: 100%;
+}
+.btn.primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
+
+/* Row helpers */
+.row.between { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+a.muted { color: var(--accent); text-decoration: none; font-weight:600; }
+
+/* ---------- Small-screen adjustments (responsive) ---------- */
+/* On small screens we remove "card" surface to make UI seamless */
+@media (max-width: 760px) {
+  .auth-wrap {
+    padding: 36px 14px;
+    gap: 14px;
+    min-height: calc(100vh - 96px);
+    align-items: stretch;
+  }
+
+  /* replace card visuals with flat, full-width panels */
+  .card {
+    background: transparent;       /* remove the card background */
+    box-shadow: none;              /* remove shadow */
+    padding: 16px 4px;             /* compact spacing */
+    border-radius: 8px;            /* subtle rounding */
+    width: 100%;                   /* full width */
+    max-width: 100%;
+  }
+
+  /* Make topbar compact */
+  .topbar { padding: 10px 14px; }
+
+  /* Preloader inner should be narrower */
+  #preloader .preloader-card {
+    min-width: 260px;
+    padding: 20px;
+  }
+
+  .preloader-gif img { width: 220px; } /* slightly smaller on phones */
+}
+
+/* Very small screens */
+@media (max-width: 420px) {
+  body { font-size: 14px; }
+  .brand { font-size: 1.1rem; }
+  .headline { font-size: 18px; }
+  .preloader-gif img { width: 200px; }
+  #preloader .preloader-card { padding: 16px; min-width: 220px; }
+}
+
+/* ---------- Accessibility & reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- Particles root (if used) ---------- */
+#particles-root { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+/* ---------- Small polish ---------- */
+/* Ensure focus outlines are visible for keyboard users */
+:focus { outline: 3px solid rgba(0,0,0,0.08); outline-offset: 2px; }
+button:focus, input:focus { outline: none; box-shadow: 0 8px 20px var(--focus-glow); }
+
+/* Prevent duplicate keyframes collisions by using namespaced keyframes */
+@keyframes float-uptight { 0%{transform:translateY(0)}50%{transform:translateY(-6px)}100%{transform:translateY(0)} }
+@keyframes spin-slow { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+/* optional tiny float on CTA text */
+.preloader-text { animation: float-uptight 3s ease-in-out infinite; }
+
+/* Legacy compatibility: if your markup had .login-card/.otp-card/.reset-card etc., keep them inheriting card styles */
+.login-card, .reset-card, .forgot-card, .otp-card {
+  background: var(--card-bg);
+  padding: 28px;
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+}
+@media (max-width:760px) {
+  .login-card, .reset-card, .forgot-card, .otp-card {
+    background: transparent;
+    box-shadow: none;
+    padding: 18px 6px;
+  }
+}
+
+/* ===== PRELOADER (user-updated version) ===== */
+/* Full-screen centered overlay */
+#preloader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent; /* remove any background so underlying blur/overlay handled elsewhere */
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* vertical center */
+  align-items: center;     /* horizontal center */
+  z-index: 9999;
+  transition: opacity 0.8s ease, visibility 0.8s ease;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
+}
+
+/* Inner preloader card (kept simple and centered) */
+#preloader .preloader-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 26px;
+  border-radius: 14px;
+  min-width: 280px;
+  background: var(--preloader-overlay);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.16);
+  border: 1px solid rgba(0,0,0,0.04);
+}
+
+/* GIF styling: user specifically set 120px width */
+.preloader-gif {
+  width: var(--preloader-gif-width); /* 120px from :root */
+  height: auto;
+  margin-bottom: 15px;
+  display: block;
+  isolation: isolate;
+}
+.preloader-gif img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  image-rendering: auto;
+  pointer-events: none;
+  user-select: none;
+  /* blending trick to neutralize white bg on dark surfaces (works best for simple GIFs) */
+  mix-blend-mode: multiply;
+  transition: filter .2s ease, opacity .2s ease;
+}
+
+/* Allow disabling the blend if needed */
+.preloader-gif.blend-off img { mix-blend-mode: normal; }
+
+/* Text below the GIF */
+.preloader-text {
+  font-size: 18px;
+   /* uses theme-aware variable */
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Optional smaller hint text */
+.preloader-sub {
+  font-size: 0.92rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Optional spin animation (user added) */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+/* apply spin if desired on wrapper (but default we keep it static) */
+.preloader-gif.spin { animation: spin 2s linear infinite; }
+
+/* Hide preloader after page load via `body.loaded` */
+body.loaded #preloader {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* If you prefer class-based hiding on #preloader: */
+/* #preloader.hidden { opacity:0; visibility:hidden; pointer-events:none; } */
+
+/* ---------- Small-screen adjustments for preloader ---------- */
+@media (max-width: 760px) {
+  #preloader .preloader-card {
+    min-width: 240px;
+    padding: 16px 18px;
+  }
+  .preloader-gif { width: calc(var(--preloader-gif-width) * 0.9); } /* slight shrink */
+}
+
+/* Very small screens */
+@media (max-width: 420px) {
+  .preloader-gif { width: calc(var(--preloader-gif-width) * 0.8); }
+  #preloader .preloader-card { min-width: 200px; padding: 12px 14px; }
+}
+
+/* ---------- Accessibility & reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  .preloader-gif.spin { animation: none !important; }
+}
+
+/* ---------- Small polish ---------- */
+/* Ensure focus outlines are visible for keyboard users */
+:focus { outline: 3px solid rgba(0,0,0,0.08); outline-offset: 2px; }
+button:focus, input:focus { outline: none; box-shadow: 0 8px 20px var(--focus-glow); }
+
+/* ---------- Particles root (if used) ---------- */
+#particles-root { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+/* Prevent duplicate keyframes collisions by using namespaced keyframes */
+@keyframes float-uptight { 0%{transform:translateY(0)}50%{transform:translateY(-6px)}100%{transform:translateY(0)} }
+@keyframes spin-slow { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+/* optional tiny float on CTA text */
+.preloader-text { animation: float-uptight 3s ease-in-out infinite; }
+
+/* Legacy compatibility: keep login/reset/otp cards consistent */
+.login-card, .reset-card, .forgot-card, .otp-card {
+  background: var(--card-bg);
+  padding: 28px;
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+}
+@media (max-width:760px) {
+  .login-card, .reset-card, .forgot-card, .otp-card {
+    background: transparent;
+    box-shadow: none;
+    padding: 18px 6px;
+  }
+}
+#preloader {
+  position: fixed;
+  top: 0; 
+  left: 0;
+  width: 100%; 
+  height: 100%;
+  
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  z-index: 9999;
+  transition: opacity 0.8s ease, visibility 0.8s ease;
+
+  /* 🔥 Remove solid background */
+  background: var(--preloader-backdrop);
+
+  /* 🔥 Blur whatever is behind the overlay */
+  backdrop-filter: blur(1px) brightness(0.6);
+  -webkit-backdrop-filter: blur(1px) brightness(0.65);
+
+  /* Prevent interaction with blurred content */
+  pointer-events: auto;
+}
+
+preloader-text{
+    color: var(--preload-text-color);
+}
+
+preloader-text.dark{
+    color: white;                                      
+}
+#mainContent {
+  opacity: 0;
+  transition: opacity 1s ease;
+}
