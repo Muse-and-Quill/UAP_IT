@@ -1,106 +1,44 @@
-# app.py
 import os
-import random
-import datetime
-import urllib.parse
-from threading import Thread
-
-from dotenv import load_dotenv
-from flask import (
-    Flask, render_template, request, redirect, url_for, flash,
-    make_response, current_app
-)
+from flask import Flask, render_template, request, redirect, url_for, flash, make_response, current_app
 from flask_mail import Mail, Message
+from models import db, Employee
+from dotenv import load_dotenv
 from passlib.hash import pbkdf2_sha256
 import jwt
-
-# local imports
-from models import db, Employee
+import datetime
+import random
+import string
 
 load_dotenv()
 
 def create_app():
     app = Flask(__name__, template_folder='templates', static_folder='static')
-
-    # ---------- Basic config ----------
+    # config from environment
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret')
     app.config['JWT_SECRET'] = os.getenv('JWT_SECRET', 'jwt-dev-secret')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI', 'sqlite:///employees.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    # Flask-Mail configuration
+    # mail
     app.config.update(
-        MAIL_SERVER=os.getenv('MAIL_SERVER', ''),
+        MAIL_SERVER=os.getenv('MAIL_SERVER'),
         MAIL_PORT=int(os.getenv('MAIL_PORT') or 587),
-        MAIL_USE_SSL=(os.getenv('MAIL_USE_SSL', 'False') == 'True'),
-        MAIL_USE_TLS=(os.getenv('MAIL_USE_TLS', 'True') == 'True'),
-        MAIL_USERNAME=os.getenv('MAIL_USERNAME', None),
-        MAIL_PASSWORD=os.getenv('MAIL_PASSWORD', None),
-        MAIL_DEFAULT_SENDER=os.getenv('MAIL_DEFAULT_SENDER') or os.getenv('MAIL_USERNAME')
+        MAIL_USE_SSL=(os.getenv('MAIL_USE_SSL') == 'True'),
+        MAIL_USERNAME=os.getenv('MAIL_USERNAME'),
+        MAIL_PASSWORD=os.getenv('MAIL_PASSWORD'),
+        MAIL_DEFAULT_SENDER=os.getenv('MAIL_USERNAME')
     )
-
-    # Initialize extensions
     mail = Mail(app)
+
     db.init_app(app)
 
-    # Make sure DB tables exist (only in simple setups; in prod use migrations)
+    # create database tables if not present
     with app.app_context():
-        try:
-            db.create_all()
-            app.logger.info("Database tables ensured.")
-        except Exception:
-            app.logger.exception("Could not create DB tables at startup.")
+        db.create_all()
 
-    # ---------- Helper functions ----------
     def gen_otp():
-        """Return a 6-digit OTP as string."""
-        return f"{random.randint(100000, 999999):06d}"
+        return str(random.randint(100000, 999999))
 
-    def _send_async_email(app_obj, msg_obj):
-        """Worker thread target: sends email inside app context and logs failures."""
-        with app_obj.app_context():
-            try:
-                start = datetime.datetime.utcnow()
-                mail.send(msg_obj)
-                elapsed = (datetime.datetime.utcnow() - start).total_seconds()
-                app_obj.logger.info("Email sent to %s in %.2fs", getattr(msg_obj, "recipients", []), elapsed)
-            except Exception:
-                app_obj.logger.exception("Async mail send failed")
-
-    def send_email_background(app_obj, msg_obj):
-        """Spawn a daemon thread to send email so request thread isn't blocked."""
-        try:
-            thr = Thread(target=_send_async_email, args=(app_obj, msg_obj), daemon=True)
-            thr.start()
-        except Exception:
-            app_obj.logger.exception("Failed to start email thread")
-            # fallback: try synchronous send (still wrapped in try/except)
-            try:
-                with app_obj.app_context():
-                    mail.send(msg_obj)
-            except Exception:
-                app_obj.logger.exception("Fallback synchronous mail send failed")
-
-    def make_jwt(payload, expires_minutes=None):
-        payload = dict(payload)
-        if expires_minutes:
-            payload['exp'] = datetime.datetime.utcnow() + datetime.timedelta(minutes=expires_minutes)
-        return jwt.encode(payload, app.config['JWT_SECRET'], algorithm='HS256')
-
-    def decode_jwt_safe(token):
-        """Safely decode a JWT token, return payload or raise."""
-        # URL decode in case cookie encoding/transport altered the token
-        token = urllib.parse.unquote(token)
-        try:
-            data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
-            return data
-        except jwt.ExpiredSignatureError:
-            raise
-        except Exception as exc:
-            # Re-raise to let callers handle with flash/redirect
-            raise
-
-    # ---------- Routes ----------
     @app.route('/')
     def index():
         return redirect(url_for('login'))
@@ -128,27 +66,22 @@ def create_app():
             otp = gen_otp()
             payload = {
                 'email': user.email,
-                'otp': otp
+                'otp': otp,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=7)
             }
-            token = make_jwt(payload, expires_minutes=7)
-
-            # send OTP email asynchronously
+            token = jwt.encode(payload, app.config['JWT_SECRET'], algorithm='HS256')
+            # send OTP email
             try:
                 msg = Message('Your Login OTP', recipients=[user.email])
-                msg.body = (
-                    f"Hello {user.name},\n\n"
-                    f"Your OTP to complete login: {otp}\n"
-                    f"This code expires in 7 minutes.\n\n"
-                    "If you did not request this, ignore."
-                )
-                send_email_background(app, msg)
-                app.logger.info("Queued OTP email for %s", user.email)
-            except Exception:
-                app.logger.exception('Failed to queue OTP email')
+                msg.body = f'Hello {user.name},\n\nYour OTP to complete login: {otp}\nThis code expires in 7 minutes.\n\nIf you did not request this, ignore.'
+                mail.send(msg)
+            except Exception as e:
+                current_app.logger.exception('Failed to send OTP email')
                 flash('Failed to send OTP. Contact admin.', 'danger')
                 return redirect(url_for('login'))
 
             resp = make_response(redirect(url_for('verify_otp')))
+            # store otp token in an httpOnly cookie (short lived)
             resp.set_cookie('otp_token', token, httponly=True, samesite='Lax')
             return resp
 
@@ -158,31 +91,26 @@ def create_app():
     def verify_otp():
         if request.method == 'POST':
             entered = request.form.get('otp', '').strip()
-        else:
-            entered = None
+            token = request.cookies.get('otp_token')
+            if not token:
+                flash('OTP session expired. Please login again.', 'danger')
+                return redirect(url_for('login'))
+            try:
+                data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
+            except jwt.ExpiredSignatureError:
+                flash('OTP expired. Please login again.', 'danger')
+                return redirect(url_for('login'))
+            except Exception:
+                flash('OTP validation failed. Please login again.', 'danger')
+                return redirect(url_for('login'))
 
-        token = request.cookies.get('otp_token')
-        if not token:
-            flash('OTP session expired. Please login again.', 'danger')
-            return redirect(url_for('login'))
-
-        try:
-            data = decode_jwt_safe(token)
-        except jwt.ExpiredSignatureError:
-            flash('OTP expired. Please login again.', 'danger')
-            return redirect(url_for('login'))
-        except Exception:
-            app.logger.exception("OTP token decode failed")
-            flash('OTP validation failed. Please login again.', 'danger')
-            return redirect(url_for('login'))
-
-        if request.method == 'POST':
             if entered == data.get('otp'):
                 # issue auth token (2-hour expiry)
                 auth_payload = {
-                    'email': data.get('email')
+                    'email': data.get('email'),
+                    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)
                 }
-                auth_token = make_jwt(auth_payload, expires_minutes=120)
+                auth_token = jwt.encode(auth_payload, app.config['JWT_SECRET'], algorithm='HS256')
                 resp = make_response(redirect(url_for('dashboard')))
                 resp.set_cookie('auth_token', auth_token, httponly=True, samesite='Lax')
                 # clear otp_token
@@ -201,7 +129,7 @@ def create_app():
             if not token:
                 return redirect(url_for('login'))
             try:
-                decode_jwt_safe(token)
+                jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
             except Exception:
                 return redirect(url_for('login'))
             return fn(*args, **kwargs)
@@ -210,40 +138,28 @@ def create_app():
     @app.route('/dashboard')
     @auth_required
     def dashboard():
-        # example dashboard, adapt per your project
         return render_template('dashboard.html')
 
-    # Forgot password -> send reset OTP
+    # forgot password - step1: request OTP by providing employee_id & email
     @app.route('/forgot', methods=['GET', 'POST'])
     def forgot():
         if request.method == 'POST':
             emp_id = request.form.get('employee_id', '').strip()
             email = request.form.get('email', '').strip()
-
-            if not emp_id or not email:
-                flash('Provide Employee ID and Email', 'danger')
-                return redirect(url_for('forgot'))
-
             user = Employee.query.filter_by(employee_id=emp_id, email=email).first()
             if not user:
                 flash('Employee ID and Email do not match', 'danger')
                 return redirect(url_for('forgot'))
 
             otp = gen_otp()
-            payload = {'email': user.email, 'otp': otp}
-            token = make_jwt(payload, expires_minutes=10)
-
+            payload = {'email': user.email, 'otp': otp, 'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=10)}
+            token = jwt.encode(payload, app.config['JWT_SECRET'], algorithm='HS256')
             try:
                 msg = Message('Password Reset OTP', recipients=[user.email])
-                msg.body = (
-                    f"Hello {user.name},\n\nYour password reset OTP: {otp}\n"
-                    "Expires in 10 minutes.\n\nIf you did not request this, ignore."
-                )
-                send_email_background(app, msg)
-                app.logger.info("Queued password reset OTP for %s", user.email)
+                msg.body = f'Hello {user.name},\n\nYour password reset OTP: {otp}\nExpires in 10 minutes.'
+                mail.send(msg)
             except Exception:
-                app.logger.exception('Failed to queue reset OTP')
-                flash('Could not send reset OTP. Contact admin.', 'danger')
+                current_app.logger.exception('Failed to send reset OTP')
 
             resp = make_response(redirect(url_for('reset_verify')))
             resp.set_cookie('reset_token', token, httponly=True, samesite='Lax')
@@ -255,28 +171,23 @@ def create_app():
     def reset_verify():
         if request.method == 'POST':
             entered = request.form.get('otp', '').strip()
-        else:
-            entered = None
+            token = request.cookies.get('reset_token')
+            if not token:
+                flash('Session expired. Start forgot flow again.', 'danger')
+                return redirect(url_for('forgot'))
+            try:
+                data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
+            except jwt.ExpiredSignatureError:
+                flash('OTP expired. Start again.', 'danger')
+                return redirect(url_for('forgot'))
+            except Exception:
+                flash('Invalid session', 'danger')
+                return redirect(url_for('forgot'))
 
-        token = request.cookies.get('reset_token')
-        if not token:
-            flash('Session expired. Start forgot flow again.', 'danger')
-            return redirect(url_for('forgot'))
-
-        try:
-            data = decode_jwt_safe(token)
-        except jwt.ExpiredSignatureError:
-            flash('OTP expired. Start again.', 'danger')
-            return redirect(url_for('forgot'))
-        except Exception:
-            app.logger.exception("Reset token decode failed")
-            flash('Invalid session', 'danger')
-            return redirect(url_for('forgot'))
-
-        if request.method == 'POST':
             if entered == data.get('otp'):
-                reset_payload = {'email': data.get('email')}
-                reset_token = make_jwt(reset_payload, expires_minutes=15)
+                # set a pwd_reset cookie for the reset form
+                reset_payload = {'email': data.get('email'), 'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15)}
+                reset_token = jwt.encode(reset_payload, app.config['JWT_SECRET'], algorithm='HS256')
                 resp = make_response(redirect(url_for('reset_password')))
                 resp.set_cookie('pwd_reset', reset_token, httponly=True, samesite='Lax')
                 resp.set_cookie('reset_token', '', expires=0)
@@ -293,7 +204,7 @@ def create_app():
             flash('Unauthorized or session expired.', 'danger')
             return redirect(url_for('forgot'))
         try:
-            data = decode_jwt_safe(token)
+            data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
         except Exception:
             flash('Session expired or invalid.', 'danger')
             return redirect(url_for('forgot'))
@@ -304,19 +215,8 @@ def create_app():
                 flash('Password should be at least 6 characters', 'danger')
                 return redirect(url_for('reset_password'))
             user = Employee.query.filter_by(email=data.get('email')).first()
-            if not user:
-                flash('User not found', 'danger')
-                return redirect(url_for('forgot'))
-
             user.password_hash = pbkdf2_sha256.hash(new_pass)
-            try:
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-                app.logger.exception("Failed to update password")
-                flash('Could not update password. Try again later.', 'danger')
-                return redirect(url_for('reset_password'))
-
+            db.session.commit()
             flash('Password updated. Please login.', 'success')
             resp = make_response(redirect(url_for('login')))
             resp.set_cookie('pwd_reset', '', expires=0)
@@ -324,25 +224,8 @@ def create_app():
 
         return render_template('reset_password.html')
 
-    # Simple health check endpoint
-    @app.route('/health')
-    def health():
-        return "OK", 200
-
-    # Optional error handlers (useful for logging)
-    @app.errorhandler(404)
-    def not_found(e):
-        return render_template('404.html'), 404
-
-    @app.errorhandler(500)
-    def internal_error(e):
-        current_app.logger.exception("Server error: %s", e)
-        return render_template('500.html'), 500
-
     return app
 
-
-if __name__ == "__main__":
-    # for local dev only. In production use gunicorn with create_app() factory.
+if __name__ == '__main__':
     app = create_app()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), debug=(os.getenv("FLASK_DEBUG") == "1"))
+    app.run(debug=True)
