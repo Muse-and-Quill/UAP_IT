@@ -1,1 +1,1 @@
-gunicorn "app:create_app()"
+gunicorn wsgi:app
