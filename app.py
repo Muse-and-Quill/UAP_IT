@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, make_response, current_app
+from flask import Flask, app, render_template, request, redirect, url_for, flash, make_response, current_app
 from flask_mail import Mail, Message
 from models import db, Employee
 from dotenv import load_dotenv
@@ -20,14 +20,17 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # mail
+# replace your mail config code with this block (in create_app())
     app.config.update(
         MAIL_SERVER=os.getenv('MAIL_SERVER'),
-        MAIL_PORT=int(os.getenv('MAIL_PORT') or 587),
-        MAIL_USE_SSL=(os.getenv('MAIL_USE_SSL') == 'True'),
+        MAIL_PORT=int(os.getenv('MAIL_PORT', 465)),
         MAIL_USERNAME=os.getenv('MAIL_USERNAME'),
         MAIL_PASSWORD=os.getenv('MAIL_PASSWORD'),
-        MAIL_DEFAULT_SENDER=os.getenv('MAIL_USERNAME')
+        MAIL_DEFAULT_SENDER=os.getenv('MAIL_DEFAULT_SENDER', os.getenv('MAIL_USERNAME')),
+        MAIL_USE_TLS=(os.getenv('MAIL_USE_TLS', 'False') == 'True'),
+        MAIL_USE_SSL=(os.getenv('MAIL_USE_SSL', 'False') == 'True'),
     )
+
     mail = Mail(app)
 
     db.init_app(app)
@@ -76,9 +79,17 @@ def create_app():
                 msg.body = f'Hello {user.name},\n\nYour OTP to complete login: {otp}\nThis code expires in 7 minutes.\n\nIf you did not request this, ignore.'
                 mail.send(msg)
             except Exception as e:
-                current_app.logger.exception('Failed to send OTP email')
+    # detailed logging for deploy logs
+                current_app.logger.exception('Failed to send OTP email — full exception follows')
+                current_app.logger.error('Mail config: server=%s port=%s tls=%s ssl=%s user=%s',
+                                        app.config.get('MAIL_SERVER'),
+                                        app.config.get('MAIL_PORT'),
+                                        app.config.get('MAIL_USE_TLS'),
+                                        app.config.get('MAIL_USE_SSL'),
+                                        app.config.get('MAIL_USERNAME'))
                 flash('Failed to send OTP. Contact admin.', 'danger')
                 return redirect(url_for('login'))
+
 
             resp = make_response(redirect(url_for('verify_otp')))
             # store otp token in an httpOnly cookie (short lived)
