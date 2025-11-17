@@ -36,8 +36,7 @@ def create_app():
     db.init_app(app)
 
     # create database tables if not present
-    with app.app_context():
-        db.create_all()
+    
 
     def gen_otp():
         return str(random.randint(100000, 999999))
