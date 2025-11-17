@@ -33,7 +33,7 @@ def create_app():
 
     mail = Mail(app)
 
-    db.init_app(app)
+    
 
     # create database tables if not present
     with app.app_context():
